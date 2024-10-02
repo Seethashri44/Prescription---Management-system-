@@ -1,0 +1,111 @@
+/prescription_app
+    /static
+    /templates
+    app.py
+    models.py
+    config.py
+import os
+
+class Config:
+    SECRET_KEY = os.urandom(24)
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///site.db'
+    MAIL_SERVER = 'smtp.gmail.com'
+    MAIL_PORT = 587
+    MAIL_USE_TLS = True
+    MAIL_USERNAME = os.environ.get('EMAIL_USER')
+    MAIL_PASSWORD = os.environ.get('EMAIL_PASS')
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+db = SQLAlchemy()
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(60), nullable=False)
+    is_doctor = db.Column(db.Boolean, default=False)  # True for doctor, False for patient
+
+class Prescription(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    doctor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    medication_name = db.Column(db.String(100), nullable=False)
+    dosage = db.Column(db.String(100), nullable=False)
+    prescribed_on = db.Column(db.DateTime, default=datetime.utcnow)
+    reminder_time = db.Column(db.DateTime, nullable=False)
+from flask import Flask, render_template, url_for, flash, redirect
+from flask_sqlalchemy import SQLAlchemy
+from models import User, Prescription
+from datetime import datetime
+from flask_mail import Mail, Message
+
+app = Flask(__name__)
+app.config.from_object('config.Config')
+db.init_app(app)
+mail = Mail(app)
+
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+# Route for login
+@app.route('/login')
+def login():
+    return render_template('login.html')
+
+# Route for doctor dashboard
+@app.route('/doctor_dashboard')
+def doctor_dashboard():
+    # Here, the doctor can view patients and prescribe medication
+    return render_template('doctor_dashboard.html')
+
+# Route for adding a prescription
+@app.route('/add_prescription', methods=['POST'])
+def add_prescription():
+    # Code for adding a prescription for a patient
+    # E.g., Prescription(patient_id=patient_id, doctor_id=doctor_id, medication_name="Drug", dosage="50mg", reminder_time=datetime.now())
+    flash('Prescription added!', 'success')
+    return redirect(url_for('doctor_dashboard'))
+
+# Route for sending medication reminders
+@app.route('/send_reminder/<int:prescription_id>')
+def send_reminder(prescription_id):
+    prescription = Prescription.query.get(prescription_id)
+    patient = User.query.get(prescription.patient_id)
+    
+    # Send email reminder
+    msg = Message('Medication Reminder', sender='noreply@example.com', recipients=[patient.email])
+    msg.body = f'Remember to take your medication: {prescription.medication_name} - {prescription.dosage}'
+    mail.send(msg)
+    
+    flash('Reminder sent!', 'success')
+    return redirect(url_for('patient_dashboard'))
+
+if __name__ == "__main__":
+    app.run(debug=True)
+<h1>Welcome to Prescription Management System</h1>
+<a href="{{ url_for('login') }}">Login</a>
+<h1>Doctor Dashboard</h1>
+<form action="{{ url_for('add_prescription') }}" method="POST">
+    <input type="text" name="patient_id" placeholder="Patient ID">
+    <input type="text" name="medication_name" placeholder="Medication Name">
+    <input type="text" name="dosage" placeholder="Dosage">
+    <input type="datetime-local" name="reminder_time" placeholder="Reminder Time">
+    <button type="submit">Add Prescription</button>
+</form>
+pip install APScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
+
+def send_scheduled_reminders():
+    prescriptions = Prescription.query.filter_by(reminder_time=datetime.now()).all()
+    for prescription in prescriptions:
+        send_reminder(prescription.id)
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=send_scheduled_reminders, trigger="interval", minutes=1)
+scheduler.start()
+
+# Shut down the scheduler when exiting the app
+atexit.register(lambda: scheduler.shutdown())
